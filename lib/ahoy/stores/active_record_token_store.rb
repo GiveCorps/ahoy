@@ -2,7 +2,6 @@ module Ahoy
   module Stores
     class ActiveRecordTokenStore < BaseStore
       def track_visit(options, &block)
-        Rails.logger.debug("AhoyDebug: Exception classes are #{unique_exception_classes}")
         visit =
           visit_model.new do |v|
             v.visit_token = ahoy.visit_token
