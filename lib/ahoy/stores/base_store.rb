@@ -81,6 +81,7 @@ module Ahoy
         classes = []
         classes << ActiveRecord::RecordNotUnique if defined?(ActiveRecord::RecordNotUnique)
         classes << PG::UniqueViolation if defined?(PG::UniqueViolation)
+        classes << Mysql2::Error if defined?(Mysql2::Error)
         classes
       end
     end
