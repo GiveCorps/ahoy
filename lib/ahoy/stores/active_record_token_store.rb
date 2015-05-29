@@ -50,7 +50,11 @@ module Ahoy
 
           yield(event) if block_given?
 
-          event.save!
+          begin
+            event.save!
+          rescue *unique_exception_classes
+            # do nothing
+          end
         end
       end
 
