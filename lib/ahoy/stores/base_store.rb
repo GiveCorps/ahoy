@@ -20,7 +20,7 @@ module Ahoy
           begin
             visit.user = user
             visit.save!
-          rescue ActiveRecord::AssociationTypeMismatch
+          rescue *unique_exception_classes
             # do nothing
           end
         end
@@ -82,6 +82,7 @@ module Ahoy
         classes << ActiveRecord::RecordNotUnique if defined?(ActiveRecord::RecordNotUnique)
         classes << PG::UniqueViolation if defined?(PG::UniqueViolation)
         classes << Mysql2::Error if defined?(Mysql2::Error)
+        classes << ActiveRecord::AssociationTypeMismatch if defined?(ActiveRecord::AssociationTypeMismatch)
         classes
       end
     end
