@@ -2,7 +2,6 @@ module Ahoy
   module Stores
     class ActiveRecordStore < BaseStore
       def track_visit(options, &block)
-        Rails.logger.debug("AhoyDebug: Exception classes are #{unique_exception_classes}")
         visit =
           visit_model.new do |v|
             v.id = ahoy.visit_id
@@ -24,6 +23,7 @@ module Ahoy
       end
 
       def track_event(name, properties, options, &block)
+        Rails.logger.debug("AhoyDebug: Exception classes are #{unique_exception_classes}")
         event =
           event_model.new do |e|
             e.id = options[:id]
