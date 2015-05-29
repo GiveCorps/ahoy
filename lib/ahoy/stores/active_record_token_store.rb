@@ -23,6 +23,7 @@ module Ahoy
       end
 
       def track_event(name, properties, options, &block)
+        Rails.logger.debug("AhoyDebug (token): Exception classes are #{unique_exception_classes}")
         if self.class.uses_deprecated_subscribers?
           options[:controller] ||= controller
           options[:user] ||= user
