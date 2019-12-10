@@ -1,56 +1,39 @@
-require "rails"
-require "addressable/uri"
-require "browser"
+require "ipaddr"
+
+# dependencies
+require "active_support"
+require "active_support/core_ext"
 require "geocoder"
-require "referer-parser"
-require "user_agent_parser"
-require "request_store"
-require "uuidtools"
-require "errbase"
+require "safely/core"
 
-require "ahoy/version"
-require "ahoy/tracker"
+# modules
+require "ahoy/utils"
+require "ahoy/base_store"
 require "ahoy/controller"
+require "ahoy/database_store"
+require "ahoy/helper"
 require "ahoy/model"
+require "ahoy/query_methods"
+require "ahoy/tracker"
+require "ahoy/version"
 require "ahoy/visit_properties"
-require "ahoy/deckhands/location_deckhand"
-require "ahoy/deckhands/request_deckhand"
-require "ahoy/deckhands/technology_deckhand"
-require "ahoy/deckhands/traffic_source_deckhand"
-require "ahoy/deckhands/utm_parameter_deckhand"
-require "ahoy/stores/base_store"
-require "ahoy/stores/active_record_store"
-require "ahoy/stores/active_record_token_store"
-require "ahoy/stores/log_store"
-require "ahoy/stores/fluentd_store"
-require "ahoy/stores/mongoid_store"
-require "ahoy/engine"
-require "ahoy/warden" if defined?(Warden)
 
-# background jobs
-begin
-  require "active_job"
-rescue LoadError
-  # do nothing
-end
-require "ahoy/geocode_job" if defined?(ActiveJob)
-
-# deprecated
-require "ahoy/subscribers/active_record"
+require "ahoy/engine" if defined?(Rails)
 
 module Ahoy
-  UUID_NAMESPACE = UUIDTools::UUID.parse("a82ae811-5011-45ab-a728-569df7499c5f")
-
   mattr_accessor :visit_duration
   self.visit_duration = 4.hours
 
   mattr_accessor :visitor_duration
   self.visitor_duration = 2.years
 
+  mattr_accessor :cookies
+  self.cookies = true
+
   mattr_accessor :cookie_domain
 
-  mattr_accessor :track_visits_immediately
-  self.track_visits_immediately = false
+  mattr_accessor :server_side_visits
+  self.server_side_visits = true
 
   mattr_accessor :quiet
   self.quiet = true
@@ -58,28 +41,80 @@ module Ahoy
   mattr_accessor :geocode
   self.geocode = true
 
-  def self.ensure_uuid(id)
-    valid = UUIDTools::UUID.parse(id) rescue nil
-    if valid
-      id
-    else
-      UUIDTools::UUID.sha1_create(UUID_NAMESPACE, id).to_s
-    end
+  mattr_accessor :max_content_length
+  self.max_content_length = 8192
+
+  mattr_accessor :max_events_per_request
+  self.max_events_per_request = 10
+
+  mattr_accessor :job_queue
+  self.job_queue = :ahoy
+
+  mattr_accessor :api
+  self.api = false
+
+  mattr_accessor :api_only
+  self.api_only = false
+
+  mattr_accessor :protect_from_forgery
+  self.protect_from_forgery = true
+
+  mattr_accessor :preserve_callbacks
+  self.preserve_callbacks = [:load_authlogic, :activate_authlogic]
+
+  mattr_accessor :user_method
+  self.user_method = lambda do |controller|
+    (controller.respond_to?(:current_user, true) && controller.send(:current_user)) || (controller.respond_to?(:current_resource_owner, true) && controller.send(:current_resource_owner)) || nil
   end
 
-  # deprecated
-
-  mattr_accessor :domain
-  mattr_accessor :visit_model
-  mattr_accessor :user_method
   mattr_accessor :exclude_method
-
-  mattr_accessor :subscribers
-  self.subscribers = []
 
   mattr_accessor :track_bots
   self.track_bots = false
+
+  mattr_accessor :bot_detection_version
+  self.bot_detection_version = 2
+
+  mattr_accessor :token_generator
+  self.token_generator = -> { SecureRandom.uuid }
+
+  mattr_accessor :mask_ips
+  self.mask_ips = false
+
+  mattr_accessor :user_agent_parser
+  self.user_agent_parser = :device_detector
+
+  mattr_accessor :logger
+
+  def self.log(message)
+    logger.info { "[ahoy] #{message}" } if logger
+  end
+
+  def self.mask_ip(ip)
+    addr = IPAddr.new(ip)
+    if addr.ipv4?
+      # set last octet to 0
+      addr.mask(24).to_s
+    else
+      # set last 80 bits to zeros
+      addr.mask(48).to_s
+    end
+  end
 end
 
-ActionController::Base.send :include, Ahoy::Controller
-ActiveRecord::Base.send(:extend, Ahoy::Model) if defined?(ActiveRecord)
+ActiveSupport.on_load(:action_controller) do
+  include Ahoy::Controller
+end
+
+ActiveSupport.on_load(:active_record) do
+  extend Ahoy::Model
+end
+
+ActiveSupport.on_load(:action_view) do
+  include Ahoy::Helper
+end
+
+# Mongoid
+if defined?(ActiveModel)
+  ActiveModel::Callbacks.include(Ahoy::Model)
+end

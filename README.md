@@ -1,16 +1,14 @@
 # Ahoy
 
-:fire: Never build an analytics platform from scratch again.
+:fire: Simple, powerful analytics for Rails
 
-Ahoy provides a solid foundation to track visits and events in Ruby, JavaScript, and native apps.
+Track visits and events in Ruby, JavaScript, and native apps. Data is stored in your database by default so you can easily combine it with other data.
 
-Works with any data store so you can easily scale.
+:postbox: To track emails, check out [Ahoy Email](https://github.com/ankane/ahoy_email), and for A/B testing, check out [Field Test](https://github.com/ankane/field_test)
 
 :tangerine: Battle-tested at [Instacart](https://www.instacart.com/opensource)
 
-:postbox: To track emails, check out [Ahoy Email](https://github.com/ankane/ahoy_email).
-
-See [upgrade instructions](#upgrading) on how to move to 1.0.
+[![Build Status](https://travis-ci.org/ankane/ahoy.svg?branch=master)](https://travis-ci.org/ankane/ahoy)
 
 ## Installation
 
@@ -20,99 +18,61 @@ Add this line to your application’s Gemfile:
 gem 'ahoy_matey'
 ```
 
-And add the javascript file in `app/assets/javascripts/application.js` after jQuery.
+And run:
+
+```sh
+bundle install
+rails generate ahoy:install
+rails db:migrate
+```
+
+Restart your web server, open a page in your browser, and a visit will be created :tada:
+
+Track your first event from a controller with:
+
+```ruby
+ahoy.track "My first event", language: "Ruby"
+```
+
+### JavaScript, Native Apps, & AMP
+
+Enable the API in `config/initializers/ahoy.rb`:
+
+```ruby
+Ahoy.api = true
+```
+
+And restart your web server.
+
+### JavaScript
+
+For Rails 6 / Webpacker, run:
+
+```sh
+yarn add ahoy.js
+```
+
+And add to `app/javascript/packs/application.js`:
 
 ```javascript
-//= require jquery
+import ahoy from "ahoy.js";
+```
+
+For Rails 5 / Sprockets, add to `app/assets/javascripts/application.js`:
+
+```javascript
 //= require ahoy
 ```
 
-## Choose a Data Store
+Track an event with:
 
-### PostgreSQL
-
-For Rails 4 and PostgreSQL 9.2 or greater, use:
-
-```sh
-rails generate ahoy:stores:active_record -d postgresql
-rake db:migrate
+```javascript
+ahoy.track("My second event", {language: "JavaScript"});
 ```
 
-Otherwise, follow the instructions for MySQL.
+### GDPR Compliance
 
-### MySQL or SQLite
-
-Add [activeuuid](https://github.com/jashmenn/activeuuid) to your Gemfile.
-
-```ruby
-gem 'activeuuid', '>= 0.5.0'
-```
-
-And run:
-
-```sh
-rails generate ahoy:stores:active_record
-rake db:migrate
-```
-
-If you just want visits, run:
-
-```sh
-rails generate ahoy:stores:active_record_visits
-rake db:migrate
-```
-
-### MongoDB
-
-```sh
-rails generate ahoy:stores:mongoid
-```
-
-### Fluentd [master]
-
-Add [fluent-logger](https://github.com/fluent/fluent-logger-ruby) to your Gemfile.
-
-```ruby
-gem 'fluent-logger'
-```
-
-And run:
-
-```sh
-rails generate ahoy:stores:fluentd
-```
-
-Use `ENV["FLUENTD_HOST"]` and `ENV["FLUENTD_PORT"]` to configure.
-
-### Logs
-
-```sh
-rails generate ahoy:stores:log
-```
-
-This logs visits to `log/visits.log` and events to `log/events.log`.
-
-### Custom
-
-```sh
-rails generate ahoy:stores:custom
-```
-
-This creates a class for you to fill out.
-
-```ruby
-class Ahoy::Store < Ahoy::Stores::BaseStore
-
-  def track_visit(options)
-  end
-
-  def track_event(name, properties, options)
-  end
-
-end
-```
-
-See the [ActiveRecordStore](https://github.com/ankane/ahoy/blob/master/lib/ahoy/stores/active_record_store.rb) for an example.
+Ahoy provides a number of options to help with GDPR compliance. See the [GDPR section](#gdpr-compliance-1) for more info.
 
 ## How It Works
 
@@ -120,32 +80,34 @@ See the [ActiveRecordStore](https://github.com/ankane/ahoy/blob/master/lib/ahoy/
 
 When someone visits your website, Ahoy creates a visit with lots of useful information.
 
-- **traffic source** - referrer, referring domain, landing page, search keyword
-- **location** - country, region, and city
-- **technology** - browser, OS, and device type
+- **traffic source** - referrer, referring domain, landing page
+- **location** - country, region, city, latitude, longitude
+- **technology** - browser, OS, device type
 - **utm parameters** - source, medium, term, content, campaign
 
 Use the `current_visit` method to access it.
 
+Prevent certain Rails actions from creating visits with:
+
+```ruby
+skip_before_action :track_ahoy_visit
+```
+
+This is typically useful for APIs. If your entire Rails app is an API, you can use:
+
+```ruby
+Ahoy.api_only = true
+```
+
+You can also defer visit tracking to JavaScript. This is useful for preventing bots (that aren’t detected by their user agent) and users with cookies disabled from creating a new visit on each request. `:when_needed` will create visits server-side only when needed by events, and `false` will disable server-side creation completely, discarding events without a visit.
+
+```ruby
+Ahoy.server_side_visits = :when_needed
+```
+
 ### Events
 
-Each event has a `name` and `properties`.
-
-There are three ways to track events.
-
-#### JavaScript
-
-```javascript
-ahoy.track("Viewed book", {title: "The World is Flat"});
-```
-
-or track events automatically with:
-
-```javascript
-ahoy.trackAll();
-```
-
-See [Ahoy.js](https://github.com/ankane/ahoy.js) for a complete list of features.
+Each event has a `name` and `properties`. There are several ways to track events.
 
 #### Ruby
 
@@ -153,15 +115,88 @@ See [Ahoy.js](https://github.com/ankane/ahoy.js) for a complete list of features
 ahoy.track "Viewed book", title: "Hot, Flat, and Crowded"
 ```
 
+Track actions automatically with:
+
+```ruby
+class ApplicationController < ActionController::Base
+  after_action :track_action
+
+  protected
+
+  def track_action
+    ahoy.track "Ran action", request.path_parameters
+  end
+end
+```
+
+#### JavaScript
+
+```javascript
+ahoy.track("Viewed book", {title: "The World is Flat"});
+```
+
+Track events automatically with:
+
+```javascript
+ahoy.trackAll();
+```
+
+See [Ahoy.js](https://github.com/ankane/ahoy.js) for a complete list of features.
+
 #### Native Apps
 
-See the [HTTP spec](#native-apps) until libraries are built.
+For Android, check out [Ahoy Android](https://github.com/instacart/ahoy-android). For other platforms, see the [API spec](#api-spec).
+
+#### AMP
+
+```erb
+<head>
+  <script async custom-element="amp-analytics" src="https://cdn.ampproject.org/v0/amp-analytics-0.1.js"></script>
+</head>
+<body>
+  <%= amp_event "Viewed article", title: "Analytics with Rails" %>
+</body>
+```
+
+### Associated Models
+
+Say we want to associate orders with visits. Just add `visitable` to the model.
+
+```ruby
+class Order < ApplicationRecord
+  visitable :ahoy_visit
+end
+```
+
+When a visitor places an order, the `ahoy_visit_id` column is automatically set :tada:
+
+See where orders are coming from with simple joins:
+
+```ruby
+Order.joins(:ahoy_visit).group("referring_domain").count
+Order.joins(:ahoy_visit).group("city").count
+Order.joins(:ahoy_visit).group("device_type").count
+```
+
+Here’s what the migration to add the `ahoy_visit_id` column should look like:
+
+```ruby
+class AddVisitIdToOrders < ActiveRecord::Migration[6.0]
+  def change
+    add_column :orders, :ahoy_visit_id, :bigint
+  end
+end
+```
+
+Customize the column with:
+
+```ruby
+visitable :sign_up_visit
+```
 
 ### Users
 
-Ahoy automatically attaches the `current_user` to the visit.
-
-With [Devise](https://github.com/plataformatec/devise), it will attach the user even if he or she signs in after the visit starts.
+Ahoy automatically attaches the `current_user` to the visit. With [Devise](https://github.com/plataformatec/devise), it attaches the user even if he or she signs in after the visit starts.
 
 With other authentication frameworks, add this to the end of your sign in method:
 
@@ -169,130 +204,92 @@ With other authentication frameworks, add this to the end of your sign in method
 ahoy.authenticate(user)
 ```
 
-## Customize the Store
-
-Stores are built to be highly customizable.
+To see the visits for a given user, create an association:
 
 ```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordStore
-  # add methods here
+class User < ApplicationRecord
+  has_many :visits, class_name: "Ahoy::Visit"
 end
 ```
 
-### Exclude Bots and More
-
-Exclude visits and events from being tracked with:
+And use:
 
 ```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordStore
-
-  def exclude?
-    bot? || request.ip == "192.168.1.1"
-  end
-
-end
+User.find(123).visits
 ```
 
-Bots are excluded by default.
+#### Custom User Method
 
-### Track Additional Values
+Use a method besides `current_user`
 
 ```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordStore
-
-  def track_visit(options)
-    super do |visit|
-      visit.gclid = visit_properties.landing_params["gclid"]
-    end
-  end
-
-  def track_event(name, properties, options)
-    super do |event|
-      event.ip = request.ip
-    end
-  end
-
-end
+Ahoy.user_method = :true_user
 ```
 
-### Customize User
-
-If you use a method other than `current_user`, set it here:
+or use a proc
 
 ```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordStore
-
-  def user
-    controller.true_user
-  end
-
-end
+Ahoy.user_method = ->(controller) { controller.true_user }
 ```
 
-### Report Exceptions
+#### Doorkeeper
 
-Exceptions are rescued so analytics do not break your app.
-
-Ahoy uses [Errbase](https://github.com/ankane/errbase) to try to report them to a service by default.
-
-To customize this, use:
-
-```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordStore
-
-  def report_exception(e)
-    Rollbar.report_exception(e)
-  end
-
-end
-```
-
-### Use Different Models
-
-For ActiveRecord and Mongoid stores
-
-```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordStore
-
-  def visit_model
-    CustomVisit
-  end
-
-  def event_model
-    CustomEvent
-  end
-
-end
-```
-
-## More Features
-
-### Automatic Tracking
-
-Page views
-
-```javascript
-ahoy.trackView();
-```
-
-Clicks
-
-```javascript
-ahoy.trackClicks();
-```
-
-Rails actions
+To attach the user with [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper), be sure you have a `current_resource_owner` method in `ApplicationController`.
 
 ```ruby
 class ApplicationController < ActionController::Base
-  after_filter :track_action
+  private
 
-  protected
-
-  def track_action
-    ahoy.track "Processed #{controller_name}##{action_name}", request.filtered_parameters
+  def current_resource_owner
+    User.find(doorkeeper_token.resource_owner_id) if doorkeeper_token
   end
 end
+```
+
+#### Knock
+
+To attach the user with [Knock](https://github.com/nsarno/knock), either include `Knock::Authenticable`in `ApplicationController`:
+
+```ruby
+class ApplicationController < ActionController::API
+  include Knock::Authenticable
+end
+```
+
+Or include it in Ahoy:
+
+```ruby
+Ahoy::BaseController.include Knock::Authenticable
+```
+
+And use:
+
+```ruby
+Ahoy.user_method = ->(controller) { controller.send(:authenticate_entity, "user") }
+```
+
+### Exclusions
+
+Bots are excluded from tracking by default. To include them, use:
+
+```ruby
+Ahoy.track_bots = true
+```
+
+Add your own rules with:
+
+```ruby
+Ahoy.exclude_method = lambda do |controller, request|
+  request.ip == "192.168.1.1"
+end
+```
+
+### Visit Duration
+
+By default, a new visit is created after 4 hours of inactivity. Change this with:
+
+```ruby
+Ahoy.visit_duration = 30.minutes
 ```
 
 ### Multiple Subdomains
@@ -303,85 +300,136 @@ To track visits across multiple subdomains, use:
 Ahoy.cookie_domain = :all
 ```
 
-### Visit Duration
-
-By default, a new visit is created after 4 hours of inactivity.
-
-Change this with:
-
-```ruby
-Ahoy.visit_duration = 30.minutes
-```
-
-### ActiveRecord
-
-Let’s associate orders with visits. Add a `visit_id` column on orders and do:
-
-```ruby
-class Order < ActiveRecord::Base
-  visitable
-end
-```
-
-When a visitor places an order, the `visit_id` column is automatically set.
-
-:tada: Magic!
-
-Customize the column and class name with:
-
-```ruby
-visitable :sign_up_visit, class_name: "Visit"
-```
-
-### Doorkeeper
-
-To attach the user with [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper), be sure you have a `current_resource_owner` method in `ApplicationController`.
-
-```ruby
-class ApplicationController < ActionController::Base
-
-  private
-
-  def current_resource_owner
-    User.find(doorkeeper_token.resource_owner_id) if doorkeeper_token
-  end
-
-end
-```
-
 ### Geocoding
 
-By default, geocoding is performed inline. For performance, move it to the background. Add [Active Job](https://github.com/ankane/activejob_backport) and set:
-
-```ruby
-Ahoy.geocode = :async
-```
-
-Or disable it with:
+Disable geocoding with:
 
 ```ruby
 Ahoy.geocode = false
 ```
 
-### Track Visits Immediately
-
-Visitor and visit ids are generated on the first request (so you can use them immediately), but the `track_visit` method isn’t called until the JavaScript library posts to the server.  This prevents browsers with cookies disabled from creating multiple visits and ensures visits are not created for API endpoints.  Change this with:
+The default job queue is `:ahoy`. Change this with:
 
 ```ruby
-Ahoy.track_visits_immediately = true
+Ahoy.job_queue = :low_priority
 ```
 
-**Note:** It’s highly recommended to perform geocoding in the background with this option.
+#### Geocoding Performance
 
-You can exclude API endpoints and other actions with:
+To avoid calls to a remote API, download the [GeoLite2 City database](https://dev.maxmind.com/geoip/geoip2/geolite2/) and configure Geocoder to use it.
+
+Add this line to your application’s Gemfile:
 
 ```ruby
-skip_before_filter :track_ahoy_visit
+gem 'maxminddb'
 ```
+
+And create an initializer at `config/initializers/geocoder.rb` with:
+
+```ruby
+Geocoder.configure(
+  ip_lookup: :geoip2,
+  geoip2: {
+    file: Rails.root.join("lib", "GeoLite2-City.mmdb")
+  }
+)
+```
+
+If you use Heroku, you can use an unofficial buildpack like [this one](https://github.com/temedica/heroku-buildpack-maxmind-geolite2) to avoid including the database in your repo.
+
+### Token Generation
+
+Ahoy uses random UUIDs for visit and visitor tokens by default, but you can use your own generator like [Druuid](https://github.com/recurly/druuid).
+
+```ruby
+Ahoy.token_generator = -> { Druuid.gen }
+```
+
+### Throttling
+
+You can use [Rack::Attack](https://github.com/kickstarter/rack-attack) to throttle requests to the API.
+
+```ruby
+class Rack::Attack
+  throttle("ahoy/ip", limit: 20, period: 1.minute) do |req|
+    if req.path.start_with?("/ahoy/")
+      req.ip
+    end
+  end
+end
+```
+
+### Exceptions
+
+Exceptions are rescued so analytics do not break your app. Ahoy uses [Safely](https://github.com/ankane/safely) to try to report them to a service by default. To customize this, use:
+
+```ruby
+Safely.report_exception_method = ->(e) { Rollbar.error(e) }
+```
+
+## GDPR Compliance
+
+Ahoy provides a number of options to help with [GDPR compliance](https://en.wikipedia.org/wiki/General_Data_Protection_Regulation).
+
+Update `config/initializers/ahoy.rb` with:
+
+```ruby
+class Ahoy::Store < Ahoy::DatabaseStore
+  def authenticate(data)
+    # disables automatic linking of visits and users
+  end
+end
+
+Ahoy.mask_ips = true
+Ahoy.cookies = false
+```
+
+This:
+
+- Masks IP addresses
+- Switches from cookies to anonymity sets
+- Disables automatic linking of visits and users
+
+If you use JavaScript tracking, also set:
+
+```javascript
+ahoy.configure({cookies: false});
+```
+
+### IP Masking
+
+Ahoy can mask IPs with the same approach [Google Analytics uses for IP anonymization](https://support.google.com/analytics/answer/2763052). This means:
+
+- For IPv4, the last octet is set to 0 (`8.8.4.4` becomes `8.8.4.0`)
+- For IPv6, the last 80 bits are set to zeros (`2001:4860:4860:0:0:0:0:8844` becomes `2001:4860:4860::`)
+
+```ruby
+Ahoy.mask_ips = true
+```
+
+IPs are masked before geolocation is performed.
+
+To mask previously collected IPs, use:
+
+```ruby
+Ahoy::Visit.find_each do |visit|
+  visit.update_column :ip, Ahoy.mask_ip(visit.ip)
+end
+```
+
+### Anonymity Sets & Cookies
+
+Ahoy can switch from cookies to [anonymity sets](https://privacypatterns.org/patterns/Anonymity-set). Instead of cookies, visitors with the same IP mask and user agent are grouped together in an anonymity set.
+
+```ruby
+Ahoy.cookies = false
+```
+
+Previously set cookies are automatically deleted.
 
 ## Development
 
-Ahoy is built with developers in mind.  You can run the following code in your browser’s console.
+Ahoy is built with developers in mind. You can run the following code in your browser’s console.
 
 Force a new visit
 
@@ -401,213 +449,238 @@ Turn off logging
 ahoy.debug(false);
 ```
 
-Debug endpoint requests in Ruby
+Debug API requests in Ruby
 
 ```ruby
 Ahoy.quiet = false
 ```
 
-## Explore the Data
+## Data Stores
 
-How you explore the data depends on the data store used.
-
-Here are ways to do it with ActiveRecord.
+Data tracked by Ahoy is sent to your data store. Ahoy ships with a data store that uses your Rails database by default. You can find it in `config/initializers/ahoy.rb`:
 
 ```ruby
-Visit.group(:search_keyword).count
-Visit.group(:country).count
-Visit.group(:referring_domain).count
-```
-
-[Chartkick](http://chartkick.com/) and [Groupdate](https://github.com/ankane/groupdate) make it super easy to visualize the data.
-
-```erb
-<%= line_chart Visit.group_by_day(:started_at).count %>
-```
-
-See where orders are coming from with simple joins:
-
-```ruby
-Order.joins(:visit).group("referring_domain").count
-Order.joins(:visit).group("city").count
-Order.joins(:visit).group("device_type").count
-```
-
-To see the visits for a given user, create an association:
-
-```ruby
-class User < ActiveRecord::Base
-  has_many :visits
+class Ahoy::Store < Ahoy::DatabaseStore
 end
+```
+
+There are four events data stores can subscribe to:
+
+```ruby
+class Ahoy::Store < Ahoy::BaseStore
+  def track_visit(data)
+    # new visit
+  end
+
+  def track_event(data)
+    # new event
+  end
+
+  def geocode(data)
+    # visit geocoded
+  end
+
+  def authenticate(data)
+    # user authenticates
+  end
+end
+```
+
+Data stores are designed to be highly customizable so you can scale as you grow. Check out [examples](docs/Data-Store-Examples.md) for Kafka, RabbitMQ, Fluentd, NATS, NSQ, and Amazon Kinesis Firehose.
+
+### Track Additional Data
+
+```ruby
+class Ahoy::Store < Ahoy::DatabaseStore
+  def track_visit(data)
+    data[:accept_language] = request.headers["Accept-Language"]
+    super(data)
+  end
+end
+```
+
+Two useful methods you can use are `request` and `controller`.
+
+You can pass additional visit data from JavaScript with:
+
+```javascript
+ahoy.configure({visitParams: {referral_code: 123}});
 ```
 
 And use:
 
 ```ruby
-user = User.first
-user.visits
+class Ahoy::Store < Ahoy::DatabaseStore
+  def track_visit(data)
+    data[:referral_code] = request.parameters[:referral_code]
+    super(data)
+  end
+end
 ```
 
-### Create Funnels
+### Use Different Models
 
 ```ruby
-viewed_store_ids = Ahoy::Event.where(name: "Viewed store").uniq.pluck(:user_id)
-added_item_ids = Ahoy::Event.where(user_id: viewed_store_ids, name: "Added item to cart").uniq.pluck(:user_id)
-viewed_checkout_ids = Ahoy::Event.where(user_id: added_item_ids, name: "Viewed checkout").uniq.pluck(:user_id)
+class Ahoy::Store < Ahoy::DatabaseStore
+  def visit_model
+    MyVisit
+  end
+
+  def event_model
+    MyEvent
+  end
+end
 ```
 
-The same approach also works with visitor ids.
+## Explore the Data
 
-## Native Apps
+[Blazer](https://github.com/ankane/blazer) is a great tool for exploring your data.
+
+With ActiveRecord, you can do:
+
+```ruby
+Ahoy::Visit.group(:search_keyword).count
+Ahoy::Visit.group(:country).count
+Ahoy::Visit.group(:referring_domain).count
+```
+
+[Chartkick](https://www.chartkick.com/) and [Groupdate](https://github.com/ankane/groupdate) make it easy to visualize the data.
+
+```erb
+<%= line_chart Ahoy::Visit.group_by_day(:started_at).count %>
+```
+
+### Querying Events
+
+Ahoy provides two methods on the event model to make querying easier.
+
+To query on both name and properties, you can use:
+
+```ruby
+Ahoy::Event.where_event("Viewed product", product_id: 123).count
+```
+
+Or just query properties with:
+
+```ruby
+Ahoy::Event.where_props(product_id: 123).count
+```
+
+### Funnels
+
+It’s easy to create funnels.
+
+```ruby
+viewed_store_ids = Ahoy::Event.where(name: "Viewed store").distinct.pluck(:user_id)
+added_item_ids = Ahoy::Event.where(user_id: viewed_store_ids, name: "Added item to cart").distinct.pluck(:user_id)
+viewed_checkout_ids = Ahoy::Event.where(user_id: added_item_ids, name: "Viewed checkout").distinct.pluck(:user_id)
+```
+
+The same approach also works with visitor tokens.
+
+## Tutorials
+
+- [Tracking Metrics with Ahoy and Blazer](https://gorails.com/episodes/internal-metrics-with-ahoy-and-blazer)
+
+## API Spec
 
 ### Visits
 
-When a user launches the app, create a visit.
+Generate visit and visitor tokens as [UUIDs](https://en.wikipedia.org/wiki/Universally_unique_identifier), and include these values in the `Ahoy-Visit` and `Ahoy-Visitor` headers with all requests.
 
-Generate a `visit_id` and `visitor_id` as [UUIDs](http://en.wikipedia.org/wiki/Universally_unique_identifier).
+Send a `POST` request to `/ahoy/visits` with `Content-Type: application/json` and a body like:
 
-Send these values in the `Ahoy-Visit` and `Ahoy-Visitor` headers with all requests.
+```json
+{
+  "visit_token": "<visit-token>",
+  "visitor_token": "<visitor-token>",
+  "platform": "iOS",
+  "app_version": "1.0.0",
+  "os_version": "11.2.6"
+}
+```
 
-Send a `POST` request to `/ahoy/visits` with:
-
-- platform - `iOS`, `Android`, etc.
-- app_version - `1.0.0`
-- os_version - `7.0.6`
-
-After 4 hours of inactivity, create another visit and use the updated visit id.
+After 4 hours of inactivity, create another visit (use the same visitor token).
 
 ### Events
 
-Send a `POST` request as `Content-Type: application/json` to `/ahoy/events` with:
+Send a `POST` request to `/ahoy/events` with `Content-Type: application/json` and a body like:
 
-- id - `5aea7b70-182d-4070-b062-b0a09699ad5e` - UUID
-- name - `Viewed item`
-- properties - `{"item_id": 123}`
-- time - `2014-06-17T00:00:00-07:00` - [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601)
-- `Ahoy-Visit` and `Ahoy-Visitor` headers
-- user token (depends on your authentication framework)
-
-Use an array to pass multiple events at once.
+```json
+{
+  "visit_token": "<visit-token>",
+  "visitor_token": "<visitor-token>",
+  "events": [
+    {
+      "id": "<optional-random-id>",
+      "name": "Viewed item",
+      "properties": {
+        "item_id": 123
+      },
+      "time": "2018-01-01T00:00:00-07:00"
+    }
+  ]
+}
+```
 
 ## Upgrading
 
-### 1.0.0
+### 3.0
 
-Add the following code to the end of `config/intializers/ahoy.rb`.
+If you installed Ahoy before 2.1 and want to keep legacy user agent parsing and bot detection, add to your Gemfile:
 
 ```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordTokenStore
-  uses_deprecated_subscribers
+gem "browser", "~> 2.0"
+gem "user_agent_parser"
+```
+
+And add to `config/initializers/ahoy.rb`:
+
+```ruby
+Ahoy.user_agent_parser = :legacy
+```
+
+### 2.2
+
+Ahoy now ships with better bot detection if you use Device Detector. This should be more accurate but can significantly reduce the number of visits recorded. For existing installs, it’s opt-in to start. To use it, add to `config/initializers/ahoy.rb`:
+
+```ruby
+Ahoy.bot_detection_version = 2
+```
+
+### 2.1
+
+Ahoy recommends [Device Detector](https://github.com/podigee/device_detector) for user agent parsing and makes it the default for new installations. To switch, add to `config/initializers/ahoy.rb`:
+
+```ruby
+Ahoy.user_agent_parser = :device_detector
+```
+
+Backfill existing records with:
+
+```ruby
+Ahoy::Visit.find_each do |visit|
+  client = DeviceDetector.new(visit.user_agent)
+  device_type =
+    case client.device_type
+    when "smartphone"
+      "Mobile"
+    when "tv"
+      "TV"
+    else
+      client.device_type.try(:titleize)
+    end
+
+  visit.browser = client.name
+  visit.os = client.os_name
+  visit.device_type = device_type
+  visit.save(validate: false) if visit.changed?
 end
 ```
 
-If you use `Ahoy::Event` to track events, copy it into your project.
+### 2.0
 
-```ruby
-module Ahoy
-  class Event < ActiveRecord::Base
-    self.table_name = "ahoy_events"
-
-    belongs_to :visit
-    belongs_to :user, polymorphic: true
-
-    serialize :properties, JSON
-  end
-end
-```
-
-That’s it!  To fix deprecations, keep reading.
-
-#### Visits
-
-Remove `ahoy_visit` from your visit model and replace it with:
-
-```ruby
-class Visit < ActiveRecord::Base
-  belongs_to :user, polymorphic: true
-end
-```
-
-#### Subscribers
-
-Remove `uses_deprecated_subscribers` from `Ahoy::Store`.
-
-If you have a custom subscriber, copy the `track` method to `track_event` in `Ahoy::Store`.
-
-```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordTokenStore
-
-  def track_event(name, properties, options)
-    # code copied from the track method in your subscriber
-  end
-
-end
-```
-
-#### Authentication
-
-Ahoy no longer tracks the `$authenticate` event automatically.
-
-To restore this behavior, use:
-
-```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordTokenStore
-
-  def authenticate(user)
-    super
-    ahoy.track "$authenticate"
-  end
-
-end
-```
-
-#### Global Options
-
-Replace the `Ahoy.user_method` with `user` method, and replace `Ahoy.track_bots` and `Ahoy.exclude_method` with `exclude?` method.
-
-Skip this step if you do not use these options.
-
-```ruby
-class Ahoy::Store < Ahoy::Stores::ActiveRecordTokenStore
-
-  def user
-    # logic from Ahoy.user_method goes here
-    controller.true_user
-  end
-
-  def exclude?
-    # logic from Ahoy.track_bots and Ahoy.exclude_method goes here
-    bot? || request.ip == "192.168.1.1"
-  end
-
-end
-```
-
-You made it!  Now, take advantage of Ahoy’s awesome new features, like easy customization and exception reporting.
-
-### 0.3.0
-
-Starting with `0.3.0`, visit and visitor tokens are now UUIDs.
-
-### 0.1.6
-
-In `0.1.6`, a big improvement was made to `browser` and `os`. Update existing visits with:
-
-```ruby
-Visit.find_each do |visit|
-  visit.set_technology
-  visit.save! if visit.changed?
-end
-```
-
-## TODO
-
-- simple dashboard
-- turn off modules
-
-## No Ruby?
-
-Check out [Ahoy.js](https://github.com/ankane/ahoy.js).
+See the [upgrade guide](docs/Ahoy-2-Upgrade.md)
 
 ## History
 

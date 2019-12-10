@@ -1,25 +1,29 @@
 module Ahoy
   class Engine < ::Rails::Engine
-    # from https://github.com/evrone/quiet_assets/blob/master/lib/quiet_assets.rb
-    initializer "ahoy.middleware", after: "sprockets.environment" do
+    initializer "ahoy", after: "sprockets.environment" do
+      Ahoy.logger ||= Rails.logger
+
+      # allow Devise to be loaded after Ahoy
+      require "ahoy/warden" if defined?(Warden)
+
       next unless Ahoy.quiet
 
       # Parse PATH_INFO by assets prefix
-      AHOY_PREFIX = "/ahoy/"
-      KEY = "ahoy.old_level"
+      AHOY_PREFIX = "/ahoy/".freeze
 
       # Just create an alias for call in middleware
       Rails::Rack::Logger.class_eval do
         def call_with_quiet_ahoy(env)
-          if env["PATH_INFO"].start_with?(AHOY_PREFIX)
-            env[KEY] = Rails.logger.level
-            Rails.logger.level = Logger::ERROR
+          if env["PATH_INFO"].start_with?(AHOY_PREFIX) && logger.respond_to?(:silence)
+            logger.silence do
+              call_without_quiet_ahoy(env)
+            end
+          else
+            call_without_quiet_ahoy(env)
           end
-          call_without_quiet_ahoy(env)
-        ensure
-          Rails.logger.level = env[KEY] if env[KEY]
         end
-        alias_method_chain :call, :quiet_ahoy
+        alias_method :call_without_quiet_ahoy, :call
+        alias_method :call, :call_with_quiet_ahoy
       end
     end
   end

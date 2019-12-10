@@ -1,60 +1,122 @@
+require "cgi"
+require "device_detector"
+require "uri"
+
 module Ahoy
   class VisitProperties
-    REQUEST_KEYS = [:ip, :user_agent, :referrer, :landing_page, :platform, :app_version, :os_version, :screen_height, :screen_width]
-    TRAFFIC_SOURCE_KEYS = [:referring_domain, :search_keyword]
-    UTM_PARAMETER_KEYS = [:utm_source, :utm_medium, :utm_term, :utm_content, :utm_campaign]
-    TECHNOLOGY_KEYS = [:browser, :os, :device_type]
-    LOCATION_KEYS = [:country, :region, :city, :postal_code, :latitude, :longitude]
+    attr_reader :request, :params, :referrer, :landing_page
 
-    KEYS = REQUEST_KEYS + TRAFFIC_SOURCE_KEYS + UTM_PARAMETER_KEYS + TECHNOLOGY_KEYS + LOCATION_KEYS
-
-    delegate *REQUEST_KEYS, to: :request_deckhand
-    delegate *TRAFFIC_SOURCE_KEYS, to: :traffic_source_deckhand
-    delegate *(UTM_PARAMETER_KEYS + [:landing_params]), to: :utm_parameter_deckhand
-    delegate *TECHNOLOGY_KEYS, to: :technology_deckhand
-    delegate *LOCATION_KEYS, to: :location_deckhand
-
-    def initialize(request, options = {})
+    def initialize(request, api:)
       @request = request
-      @options = options
+      @params = request.params
+      @referrer = api ? params["referrer"] : request.referer
+      @landing_page = api ? params["landing_page"] : request.original_url
     end
 
-    def [](key)
-      send(key)
+    def generate
+      @generate ||= request_properties.merge(tech_properties).merge(traffic_properties).merge(utm_properties)
     end
 
-    def keys
-      if Ahoy.geocode == true # no location keys for :async
-        KEYS
+    private
+
+    def utm_properties
+      landing_params = {}
+      begin
+        landing_uri = URI.parse(landing_page)
+        # could also use Rack::Utils.parse_nested_query
+        landing_params = CGI.parse(landing_uri.query) if landing_uri
+      rescue
+        # do nothing
+      end
+
+      props = {}
+      %w(utm_source utm_medium utm_term utm_content utm_campaign).each do |name|
+        props[name.to_sym] = params[name] || landing_params[name].try(:first)
+      end
+      props
+    end
+
+    def traffic_properties
+      uri = URI.parse(referrer) rescue nil
+      {
+        referring_domain: uri.try(:host).try(:first, 255)
+      }
+    end
+
+    def tech_properties
+      if Ahoy.user_agent_parser == :device_detector
+        client = DeviceDetector.new(request.user_agent)
+        device_type =
+          case client.device_type
+          when "smartphone"
+            "Mobile"
+          when "tv"
+            "TV"
+          else
+            client.device_type.try(:titleize)
+          end
+
+        {
+          browser: client.name,
+          os: client.os_name,
+          device_type: device_type
+        }
       else
-        KEYS - LOCATION_KEYS
+        raise "Add browser to your Gemfile to use legacy user agent parsing" unless defined?(Browser)
+        raise "Add user_agent_parser to your Gemfile to use legacy user agent parsing" unless defined?(UserAgentParser)
+
+        # cache for performance
+        @@user_agent_parser ||= UserAgentParser::Parser.new
+
+        user_agent = request.user_agent
+        agent = @@user_agent_parser.parse(user_agent)
+        browser = Browser.new(user_agent)
+        device_type =
+          if browser.bot?
+            "Bot"
+          elsif browser.device.tv?
+            "TV"
+          elsif browser.device.console?
+            "Console"
+          elsif browser.device.tablet?
+            "Tablet"
+          elsif browser.device.mobile?
+            "Mobile"
+          else
+            "Desktop"
+          end
+
+        {
+          browser: agent.name,
+          os: agent.os.name,
+          device_type: device_type
+        }
       end
     end
 
-    def to_hash
-      keys.inject({}) { |memo, key| memo[key] = send(key); memo }
+    # masking based on Google Analytics anonymization
+    # https://support.google.com/analytics/answer/2763052
+    def ip
+      ip = request.remote_ip
+      if ip && Ahoy.mask_ips
+        Ahoy.mask_ip(ip)
+      else
+        ip
+      end
     end
 
-    protected
-
-    def request_deckhand
-      @request_deckhand ||= Deckhands::RequestDeckhand.new(@request, @options)
-    end
-
-    def traffic_source_deckhand
-      @traffic_source_deckhand ||= Deckhands::TrafficSourceDeckhand.new(request_deckhand.referrer)
-    end
-
-    def utm_parameter_deckhand
-      @utm_parameter_deckhand ||= Deckhands::UtmParameterDeckhand.new(request_deckhand.landing_page)
-    end
-
-    def technology_deckhand
-      @technology_deckhand ||= Deckhands::TechnologyDeckhand.new(request_deckhand.user_agent)
-    end
-
-    def location_deckhand
-      @location_deckhand ||= Deckhands::LocationDeckhand.new(request_deckhand.ip)
+    def request_properties
+      {
+        ip: ip,
+        user_agent: Ahoy::Utils.ensure_utf8(request.user_agent),
+        referrer: referrer,
+        landing_page: landing_page,
+        platform: params["platform"],
+        app_version: params["app_version"],
+        os_version: params["os_version"],
+        screen_height: params["screen_height"],
+        screen_width: params["screen_width"]
+      }
     end
   end
 end
