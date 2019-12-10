@@ -82,6 +82,8 @@ module Ahoy
     def unique_exception?(e)
       return true if defined?(ActiveRecord::RecordNotUnique) && e.is_a?(ActiveRecord::RecordNotUnique)
       return true if defined?(PG::UniqueViolation) && e.is_a?(PG::UniqueViolation)
+      return true if defined?(Mysql2::Error) && e.is_a?(Mysql2::Error)
+      return true if defined?(ActiveRecord::AssociationTypeMismatch) && e.is_a?(ActiveRecord::AssociationTypeMismatch)
       return true if defined?(Mongo::Error::OperationFailure) && e.is_a?(Mongo::Error::OperationFailure) && e.message.include?("duplicate key error")
       false
     end
